@@ -58,3 +58,24 @@ describe('PromptInput', () => {
     expect(screen.getByRole('button', { name: '생성 중...' })).toBeDisabled();
   });
 });
+
+describe('PromptInput 히스토리', () => {
+  it('history가 있으면 최근 프롬프트 버튼을 보여준다', () => {
+    render(<PromptInput onGenerate={vi.fn()} isLoading={false} history={['첫번째', '두번째']} />);
+    expect(screen.getByRole('button', { name: '첫번째' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '두번째' })).toBeInTheDocument();
+  });
+
+  it('history가 비어 있으면 최근 프롬프트 영역을 보여주지 않는다', () => {
+    render(<PromptInput onGenerate={vi.fn()} isLoading={false} history={[]} />);
+    expect(screen.queryByText('최근 프롬프트')).not.toBeInTheDocument();
+  });
+
+  it('히스토리 항목을 클릭하면 입력창에 채워진다', async () => {
+    const user = userEvent.setup();
+    render(<PromptInput onGenerate={vi.fn()} isLoading={false} history={['이전 프롬프트']} />);
+
+    await user.click(screen.getByRole('button', { name: '이전 프롬프트' }));
+    expect(screen.getByRole('textbox')).toHaveValue('이전 프롬프트');
+  });
+});

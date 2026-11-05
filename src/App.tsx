@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { PromptInput } from './components/PromptInput';
 import { ComponentCard } from './components/ComponentCard';
 import { useComponentGenerator } from './hooks/useComponentGenerator';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { addToHistory } from './utils/promptHistory';
 import type { Provider } from './types';
 import './App.css';
 
@@ -10,10 +12,38 @@ const PROVIDER_CONFIG = {
   google: { label: 'Google', placeholder: 'AIza...' },
 } as const;
 
+const isProvider = (v: unknown): v is Provider => v === 'anthropic' || v === 'google';
+
+function reviveProvider(raw: unknown): Provider {
+  return isProvider(raw) ? raw : 'google';
+}
+
+function reviveApiKeys(raw: unknown): Record<Provider, string> {
+  const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    anthropic: typeof obj.anthropic === 'string' ? obj.anthropic : '',
+    google: typeof obj.google === 'string' ? obj.google : '',
+  };
+}
+
+function reviveHistory(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
+}
+
 function App() {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKeys, setApiKeys] = useLocalStorage<Record<Provider, string>>(
+    'rcg:api-keys',
+    { anthropic: '', google: '' },
+    { revive: reviveApiKeys },
+  );
   const [showKey, setShowKey] = useState(false);
-  const [provider, setProvider] = useState<Provider>('google');
+  const [provider, setProvider] = useLocalStorage<Provider>('rcg:provider', 'google', {
+    revive: reviveProvider,
+  });
+  const [history, setHistory] = useLocalStorage<string[]>('rcg:prompt-history', [], {
+    revive: reviveHistory,
+  });
+  const apiKey = apiKeys[provider];
   const [envKeys, setEnvKeys] = useState<Record<Provider, boolean>>({
     anthropic: false,
     google: false,
@@ -35,12 +65,12 @@ function App() {
       alert(`${PROVIDER_CONFIG[provider].label} API 키를 입력하거나 .env에 설정해주세요.`);
       return;
     }
+    setHistory((prev) => addToHistory(prev, prompt));
     generate(prompt, apiKey || undefined, provider);
   };
 
   const handleProviderChange = (newProvider: Provider) => {
     setProvider(newProvider);
-    setApiKey('');
   };
 
   const activeProvider = PROVIDER_CONFIG[provider].label;
@@ -65,7 +95,7 @@ function App() {
 
       <main className="workspace">
         <section className="window composer-panel" aria-label="컴포넌트 생성">
-          <PromptInput onGenerate={handleGenerate} isLoading={isLoading} />
+          <PromptInput onGenerate={handleGenerate} isLoading={isLoading} history={history} />
         </section>
 
         <aside className="window settings-panel" aria-label="실행 설정">
@@ -96,7 +126,7 @@ function App() {
                 id="api-key"
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => setApiKeys((prev) => ({ ...prev, [provider]: e.target.value }))}
                 placeholder={
                   hasEnvKey
                     ? '서버 키 사용 중 (직접 입력으로 덮어쓰기 가능)'
