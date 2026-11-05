@@ -17,6 +17,12 @@
 - API 키는 서버 밖으로 노출하지 않는다. `/api/config`는 키 존재 여부(boolean)만 반환한다 (`server/index.ts:147-156`). 키 값을 응답, 로그, 에러 메시지에 넣지 않는다.
 - Google 호출 URL에 키가 쿼리스트링으로 포함된다 (`server/index.ts:99`). 이 URL이나 fetch 에러 객체를 로그/응답에 그대로 출력하지 않는다.
 - `.env`는 커밋하지 않는다 (`.gitignore`). 키를 코드에 하드코딩하지 않는다.
+- 민감 파일은 읽거나 수정하지 않는다. `.claude/settings.json`의 `permissions.deny`가 도구 레벨에서 차단하지만, 규칙 자체도 지킨다.
+  - 대상: `.env`, `.env.*`(`.env.example` 제외), `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `id_rsa*`/`id_ed25519*`, `credentials*`, `*secret*`, `secrets/`, `.npmrc`, `.netrc`, `.aws/`, `.ssh/`, `*.tfvars`, `*.tfstate`, `.claude/settings.local.json`
+  - 차단되어도 우회하지 않는다: `cat`/`type`/`Get-Content`/`grep`/`printenv`/스크립트·서브에이전트로 내용을 읽거나, 심볼릭 링크·복사본·이름 변경으로 접근하지 않는다.
+  - 키가 필요한 작업(서버 실행, 키 동작 확인)은 사용자에게 `.env` 설정을 요청한다. 키 존재 여부는 `/api/config`(boolean)로만 확인한다.
+  - `.env.example`처럼 값이 없는 템플릿만 읽고 수정할 수 있다. 실제 키 값을 넣지 않는다.
+  - `permissions.deny` 규칙을 삭제·완화하지 않는다. 변경이 필요하면 사용자에게 제안한다.
 
 ### Do's & Don'ts
 
