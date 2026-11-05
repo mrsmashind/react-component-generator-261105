@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { PromptInput } from './components/PromptInput';
 import { ComponentCard } from './components/ComponentCard';
 import { useComponentGenerator } from './hooks/useComponentGenerator';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { addToHistory } from './utils/promptHistory';
 import type { Provider } from './types';
 import './App.css';
 
@@ -10,16 +12,42 @@ const PROVIDER_CONFIG = {
   google: { label: 'Google', placeholder: 'AIza...' },
 } as const;
 
+const isProvider = (v: unknown): v is Provider => v === 'anthropic' || v === 'google';
+
+function reviveProvider(raw: unknown): Provider {
+  return isProvider(raw) ? raw : 'google';
+}
+
+function reviveHistory(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
+}
+
 function App() {
-  const [apiKey, setApiKey] = useState('');
+  // API 키는 localStorage에 저장하지 않는다. 미리보기가 같은 origin에서 생성 코드를 실행하므로 읽힐 수 있다.
+  const [apiKeys, setApiKeys] = useState<Record<Provider, string>>({ anthropic: '', google: '' });
   const [showKey, setShowKey] = useState(false);
-  const [provider, setProvider] = useState<Provider>('google');
+  const [provider, setProvider] = useLocalStorage<Provider>('rcg:provider', 'google', {
+    revive: reviveProvider,
+  });
+  const [history, setHistory] = useLocalStorage<string[]>('rcg:prompt-history', [], {
+    revive: reviveHistory,
+  });
+  const apiKey = apiKeys[provider];
   const [envKeys, setEnvKeys] = useState<Record<Provider, boolean>>({
     anthropic: false,
     google: false,
   });
   const { components, isLoading, error, generate, removeComponent, clearAll } =
     useComponentGenerator();
+
+  useEffect(() => {
+    // 이전 버전이 평문으로 저장해 둔 API 키를 제거한다.
+    try {
+      localStorage.removeItem('rcg:api-keys');
+    } catch {
+      // 접근이 차단된 환경에서는 무시한다.
+    }
+  }, []);
 
   useEffect(() => {
     fetch('/api/config')
@@ -30,17 +58,17 @@ function App() {
 
   const hasEnvKey = envKeys[provider];
 
-  const handleGenerate = (prompt: string) => {
+  const handleGenerate = async (prompt: string) => {
     if (!apiKey.trim() && !hasEnvKey) {
       alert(`${PROVIDER_CONFIG[provider].label} API 키를 입력하거나 .env에 설정해주세요.`);
       return;
     }
-    generate(prompt, apiKey || undefined, provider);
+    const ok = await generate(prompt, apiKey || undefined, provider);
+    if (ok) setHistory((prev) => addToHistory(prev, prompt));
   };
 
   const handleProviderChange = (newProvider: Provider) => {
     setProvider(newProvider);
-    setApiKey('');
   };
 
   const activeProvider = PROVIDER_CONFIG[provider].label;
@@ -65,7 +93,7 @@ function App() {
 
       <main className="workspace">
         <section className="window composer-panel" aria-label="컴포넌트 생성">
-          <PromptInput onGenerate={handleGenerate} isLoading={isLoading} />
+          <PromptInput onGenerate={handleGenerate} isLoading={isLoading} history={history} />
         </section>
 
         <aside className="window settings-panel" aria-label="실행 설정">
@@ -96,7 +124,7 @@ function App() {
                 id="api-key"
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => setApiKeys((prev) => ({ ...prev, [provider]: e.target.value }))}
                 placeholder={
                   hasEnvKey
                     ? '서버 키 사용 중 (직접 입력으로 덮어쓰기 가능)'
