@@ -18,24 +18,13 @@ function reviveProvider(raw: unknown): Provider {
   return isProvider(raw) ? raw : 'google';
 }
 
-function reviveApiKeys(raw: unknown): Record<Provider, string> {
-  const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  return {
-    anthropic: typeof obj.anthropic === 'string' ? obj.anthropic : '',
-    google: typeof obj.google === 'string' ? obj.google : '',
-  };
-}
-
 function reviveHistory(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
 }
 
 function App() {
-  const [apiKeys, setApiKeys] = useLocalStorage<Record<Provider, string>>(
-    'rcg:api-keys',
-    { anthropic: '', google: '' },
-    { revive: reviveApiKeys },
-  );
+  // API 키는 localStorage에 저장하지 않는다. 미리보기가 같은 origin에서 생성 코드를 실행하므로 읽힐 수 있다.
+  const [apiKeys, setApiKeys] = useState<Record<Provider, string>>({ anthropic: '', google: '' });
   const [showKey, setShowKey] = useState(false);
   const [provider, setProvider] = useLocalStorage<Provider>('rcg:provider', 'google', {
     revive: reviveProvider,
@@ -52,6 +41,15 @@ function App() {
     useComponentGenerator();
 
   useEffect(() => {
+    // 이전 버전이 평문으로 저장해 둔 API 키를 제거한다.
+    try {
+      localStorage.removeItem('rcg:api-keys');
+    } catch {
+      // 접근이 차단된 환경에서는 무시한다.
+    }
+  }, []);
+
+  useEffect(() => {
     fetch('/api/config')
       .then((res) => res.json())
       .then((data) => setEnvKeys(data.envKeys))
@@ -60,13 +58,13 @@ function App() {
 
   const hasEnvKey = envKeys[provider];
 
-  const handleGenerate = (prompt: string) => {
+  const handleGenerate = async (prompt: string) => {
     if (!apiKey.trim() && !hasEnvKey) {
       alert(`${PROVIDER_CONFIG[provider].label} API 키를 입력하거나 .env에 설정해주세요.`);
       return;
     }
-    setHistory((prev) => addToHistory(prev, prompt));
-    generate(prompt, apiKey || undefined, provider);
+    const ok = await generate(prompt, apiKey || undefined, provider);
+    if (ok) setHistory((prev) => addToHistory(prev, prompt));
   };
 
   const handleProviderChange = (newProvider: Provider) => {

@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useLocalStorage } from './useLocalStorage';
@@ -61,5 +62,23 @@ describe('useLocalStorage', () => {
     const { result } = renderHook(() => useLocalStorage('k', 'init'));
     act(() => result.current[1]('next'));
     expect(result.current[0]).toBe('next');
+  });
+
+  it('StrictMode에서 updater가 두 번 호출돼도 저장은 한 번만 일어난다', () => {
+    const setItem = vi.spyOn(localStorage, 'setItem');
+    const { result } = renderHook(() => useLocalStorage('k', 1), { wrapper: StrictMode });
+    act(() => result.current[1]((prev) => prev + 1));
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem('k')).toBe('2');
+  });
+
+  it('같은 틱의 연속 함수형 업데이트가 모두 누적 저장된다', () => {
+    const { result } = renderHook(() => useLocalStorage('k', 0));
+    act(() => {
+      result.current[1]((prev) => prev + 1);
+      result.current[1]((prev) => prev + 1);
+    });
+    expect(result.current[0]).toBe(2);
+    expect(localStorage.getItem('k')).toBe('2');
   });
 });

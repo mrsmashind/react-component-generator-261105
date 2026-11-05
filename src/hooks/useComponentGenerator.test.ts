@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useComponentGenerator } from './useComponentGenerator';
+import { useComponentGenerator, MAX_COMPONENTS } from './useComponentGenerator';
 
 const KEY = 'rcg:components';
 
@@ -75,5 +75,46 @@ describe('useComponentGenerator 영속성', () => {
     );
     const { result } = renderHook(() => useComponentGenerator());
     expect(result.current.components.map((c) => c.id)).toEqual(['1']);
+  });
+
+  it('생성에 성공하면 generate가 true를 반환한다', async () => {
+    mockFetchOk('x');
+    const { result } = renderHook(() => useComponentGenerator());
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.generate('카드', undefined, 'google');
+    });
+    expect(ok).toBe(true);
+  });
+
+  it('생성에 실패하면 generate가 false를 반환한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: 'fail' }) }),
+    );
+    const { result } = renderHook(() => useComponentGenerator());
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.generate('카드', undefined, 'google');
+    });
+    expect(ok).toBe(false);
+  });
+
+  it('저장하는 컴포넌트 수는 MAX_COMPONENTS로 제한되고 오래된 것부터 버린다', async () => {
+    const existing = Array.from({ length: MAX_COMPONENTS }, (_, i) => ({
+      id: `old-${i}`,
+      prompt: 'p',
+      code: 'c',
+      createdAt: new Date().toISOString(),
+    }));
+    localStorage.setItem(KEY, JSON.stringify(existing));
+    mockFetchOk('new-code');
+    const { result } = renderHook(() => useComponentGenerator());
+    await act(() => result.current.generate('새 프롬프트', undefined, 'google'));
+
+    expect(result.current.components).toHaveLength(MAX_COMPONENTS);
+    expect(result.current.components[0].code).toBe('new-code');
+    expect(result.current.components.at(-1)!.id).toBe(`old-${MAX_COMPONENTS - 2}`);
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toHaveLength(MAX_COMPONENTS);
   });
 });

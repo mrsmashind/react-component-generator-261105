@@ -35,14 +35,27 @@ describe('App 상태 영속성', () => {
     expect(JSON.parse(localStorage.getItem('rcg:provider')!)).toBe('anthropic');
   });
 
-  it('입력한 API 키가 다시 렌더링해도 유지된다', async () => {
+  it('입력한 API 키는 localStorage에 저장되지 않는다', async () => {
     const user = userEvent.setup();
-    const first = render(<App />);
-    await user.type(screen.getByLabelText('API Key'), 'AIza-test');
-    first.unmount();
-
     render(<App />);
-    expect(screen.getByLabelText('API Key')).toHaveValue('AIza-test');
+    await user.type(screen.getByLabelText('API Key'), 'AIza-test');
+
+    expect(localStorage.getItem('rcg:api-keys')).toBeNull();
+    for (let i = 0; i < localStorage.length; i++) {
+      expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('AIza-test');
+    }
+  });
+
+  it('이전 버전이 저장해 둔 API 키는 복원하지 않는다', () => {
+    localStorage.setItem('rcg:api-keys', JSON.stringify({ anthropic: '', google: 'old-key' }));
+    render(<App />);
+    expect(screen.getByLabelText('API Key')).toHaveValue('');
+  });
+
+  it('이전 버전이 저장해 둔 API 키는 localStorage에서 삭제된다', () => {
+    localStorage.setItem('rcg:api-keys', JSON.stringify({ anthropic: '', google: 'old-key' }));
+    render(<App />);
+    expect(localStorage.getItem('rcg:api-keys')).toBeNull();
   });
 
   it('API 키는 Provider별로 따로 저장되고 전환해도 지워지지 않는다', async () => {
@@ -66,6 +79,26 @@ describe('App 상태 영속성', () => {
 
     await screen.findByText(/컴포넌트 ·/);
     expect(JSON.parse(localStorage.getItem('rcg:prompt-history')!)).toEqual(['프로필 카드']);
+  });
+
+  it('생성에 실패한 프롬프트는 히스토리에 저장되지 않는다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/api/config') {
+          return { ok: true, json: async () => ({ envKeys: { anthropic: false, google: false } }) };
+        }
+        return { ok: false, json: async () => ({ error: '서버 오류' }) };
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(screen.getByLabelText('API Key'), 'k');
+    await user.type(screen.getByRole('textbox', { name: '' }), '실패할 프롬프트');
+    await user.click(screen.getByRole('button', { name: '컴포넌트 생성' }));
+
+    await screen.findByText(/서버 오류/);
+    expect(localStorage.getItem('rcg:prompt-history')).toBeNull();
   });
 
   it('저장된 프롬프트 히스토리를 복원해 보여준다', () => {
