@@ -1,0 +1,110 @@
+@font-face {
+  font-family: Galmuri14;
+  src: url('galmuri/dist/Galmuri14.woff2') format('woff2');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Galmuri11;
+  src: url('galmuri/dist/Galmuri11.woff2') format('woff2');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: GalmuriMono11;
+  src: url('galmuri/dist/GalmuriMono11.woff2') format('woff2');
+  font-display: swap;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  /* 책상(데스크톱) */
+  --desk: #5a6ca8;
+  --desk-dot: #4b5c96;
+
+  /* 플래티넘 창 */
+  --platinum: #d8d8d8;
+  --platinum-hi: #ffffff;
+  --platinum-mid: #a9a9a9;
+  --platinum-lo: #7b7b7b;
+  --paper: #fffdf4;
+  --paper-line: #e3dfcd;
+
+  /* 잉크 & 포인트 */
+  --ink: #191a24;
+  --ink-soft: #4d4f61;
+  --accent: #2d37a0;
+  --accent-hi: #4a56c8;
+  --danger: #b82e26;
+  --ok: #2b7a4b;
+  --sun: #f2c84b;
+
+  --font-ui: Galmuri14, Galmuri11, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  --font-mono: GalmuriMono11, Galmuri11, Consolas, monospace;
+
+  --bevel-out:
+    inset -1px -1px 0 var(--platinum-lo), inset 1px 1px 0 var(--platinum-hi),
+    inset -2px -2px 0 var(--platinum-mid);
+  --bevel-in:
+    inset 1px 1px 0 var(--platinum-lo), inset 2px 2px 0 var(--platinum-mid),
+    inset -1px -1px 0 var(--platinum-hi);
+  --window-shadow: 5px 5px 0 rgba(15, 16, 40, 0.45);
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--desk);
+  background-image:
+    radial-gradient(circle, var(--desk-dot) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--desk-dot) 1px, transparent 1.5px);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    4px 4px;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px dashed var(--ink);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
