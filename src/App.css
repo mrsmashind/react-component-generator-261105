@@ -303,6 +303,26 @@
   align-items: end;
 }
 
+.prompt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prompt-counter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  font-size: 12px;
+  color: #6b6a60;
+}
+
+.prompt-counter-over {
+  color: #b3261e;
+  font-weight: 700;
+}
+
 .prompt-textarea {
   min-height: 130px;
   padding: 12px 14px;
