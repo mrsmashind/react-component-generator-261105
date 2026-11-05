@@ -3,14 +3,27 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
+const encoder = new TextEncoder();
+const line = (event: object) => encoder.encode(`${JSON.stringify(event)}\n`);
+const CONFIG_RESPONSE = {
+  ok: true,
+  json: async () => ({ envKeys: { anthropic: false, google: false } }),
+};
+const FINAL_CODE = 'const A = () => <div />;\nrender(<A />);';
+
 function stubFetch() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
-      if (url === '/api/config') {
-        return { ok: true, json: async () => ({ envKeys: { anthropic: false, google: false } }) };
-      }
-      return { ok: true, json: async () => ({ code: 'const A = () => <div />;\nrender(<A />);' }) };
+      if (url === '/api/config') return CONFIG_RESPONSE;
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(line({ delta: FINAL_CODE }));
+          c.enqueue(line({ done: true, code: FINAL_CODE }));
+          c.close();
+        },
+      });
+      return { ok: true, body };
     }),
   );
 }
@@ -105,6 +118,39 @@ describe('App 상태 영속성', () => {
     localStorage.setItem('rcg:prompt-history', JSON.stringify(['저장된 프롬프트']));
     render(<App />);
     expect(screen.getByRole('button', { name: '저장된 프롬프트' })).toBeInTheDocument();
+  });
+
+  it('생성 중에는 코드 탭에 스트리밍되는 코드를 보여주고, 완료되면 미리보기 탭을 선택한다', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url === '/api/config' ? CONFIG_RESPONSE : { ok: true, body },
+      ),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(screen.getByLabelText('API Key'), 'k');
+    await user.type(screen.getByRole('textbox', { name: '' }), '카드');
+    await user.click(screen.getByRole('button', { name: '컴포넌트 생성' }));
+
+    controller.enqueue(line({ delta: 'const Partial' }));
+    expect(await screen.findByText('const Partial')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '코드' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '미리보기' })).toHaveAttribute('aria-selected', 'false');
+
+    controller.enqueue(line({ delta: ' = 1;' }));
+    controller.enqueue(line({ done: true, code: FINAL_CODE }));
+    controller.close();
+
+    await screen.findByText(/컴포넌트 ·/);
+    expect(screen.queryByText('const Partial = 1;')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '미리보기' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('저장된 컴포넌트 목록을 복원해 보여준다', () => {
