@@ -1,5 +1,6 @@
-import { stripCodeFences, ensureRenderCall } from './generator';
+import { stripCodeFences, ensureRenderCall, classifyError } from './generator';
 import { withModelFallback } from './fallback';
+import { extractAnthropicChunk, extractGoogleChunk, readSSE, toNdjsonStream } from './stream';
 
 // 우선순위 순서. 앞 모델이 실패하면 다음 모델로 폴백한다.
 const GOOGLE_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash'];
@@ -135,6 +136,68 @@ async function callGoogle(prompt: string, apiKey: string): Promise<string> {
   return withModelFallback(GOOGLE_MODELS, (model) => callGoogleModel(prompt, apiKey, model));
 }
 
+// ---- 스트리밍 ----
+// 업스트림 연결(fetch + 상태 코드 검사)은 첫 청크 전에 끝내서 503/429 매핑과 모델 폴백이 그대로 동작하게 한다.
+// 이미 스트림이 시작된 뒤의 실패는 NDJSON `{error}` 이벤트로 전달한다.
+
+type TextStream = AsyncGenerator<string, void, undefined>;
+
+async function openAnthropicStream(prompt: string, apiKey: string): Promise<TextStream> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      stream: true,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Claude API error: ${response.status}`);
+  }
+
+  return readSSE(response.body!, extractAnthropicChunk);
+}
+
+async function openGoogleStream(prompt: string, apiKey: string, model: string): Promise<TextStream> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 8192 },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini API error: ${response.status}`);
+  }
+
+  return readSSE(response.body!, extractGoogleChunk);
+}
+
+async function openStream(provider: Provider, prompt: string, apiKey: string): Promise<TextStream> {
+  return provider === 'google'
+    ? withModelFallback(GOOGLE_MODELS, (model) => openGoogleStream(prompt, apiKey, model))
+    : openAnthropicStream(prompt, apiKey);
+}
+
+function ndjsonResponse(source: TextStream): Response {
+  return new Response(toNdjsonStream(source), {
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache' },
+  });
+}
+
 const server = Bun.serve({
   port: 3002,
   async fetch(req) {
@@ -158,10 +221,11 @@ const server = Bun.serve({
 
     if (req.method === 'POST' && url.pathname === '/api/generate') {
       try {
-        const { prompt, apiKey, provider = 'anthropic' } = (await req.json()) as {
+        const { prompt, apiKey, provider = 'anthropic', stream = false } = (await req.json()) as {
           prompt: string;
           apiKey?: string;
           provider?: Provider;
+          stream?: boolean;
         };
 
         const resolvedKey = resolveApiKey(provider, apiKey);
@@ -180,6 +244,10 @@ const server = Bun.serve({
           );
         }
 
+        if (stream) {
+          return ndjsonResponse(await openStream(provider, prompt, resolvedKey));
+        }
+
         const text =
           provider === 'google'
             ? await callGoogle(prompt, resolvedKey)
@@ -191,24 +259,8 @@ const server = Bun.serve({
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
 
-        if (message.includes('503')) {
-          return Response.json(
-            { error: 'API 서버가 일시적으로 과부하 상태입니다. 잠시 후 다시 시도해주세요.' },
-            { status: 503, headers: CORS_HEADERS }
-          );
-        }
-
-        if (message.includes('429')) {
-          return Response.json(
-            { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' },
-            { status: 429, headers: CORS_HEADERS }
-          );
-        }
-
-        return Response.json(
-          { error: message },
-          { status: 500, headers: CORS_HEADERS }
-        );
+        const { status, error } = classifyError(message);
+        return Response.json({ error }, { status, headers: CORS_HEADERS });
       }
     }
 
