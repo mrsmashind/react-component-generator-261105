@@ -2,6 +2,22 @@
   "worktree": {
     "baseRef": "head"
   },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/tdd-reminder.ts\"",
+            "timeout": 10,
+            "statusMessage": "TDD 규칙 확인 중..."
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "deny": [
       "Read(**/.env)",
